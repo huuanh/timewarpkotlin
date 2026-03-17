@@ -52,4 +52,14 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+
+    // AdMob
+    implementation("com.google.android.gms:play-services-ads:23.6.0")
+
+    // Google Play Billing
+    implementation("com.android.billingclient:billing-ktx:7.1.1")
+
+    // Guava ListenableFuture — resolve conflict between CameraX and AdMob
+    implementation("com.google.guava:guava:32.1.3-android")
 }

@@ -28,6 +28,7 @@ import com.timewarpscan.nativecamera.camera.CameraController
 import com.timewarpscan.nativecamera.render.ScanRenderer
 import com.timewarpscan.nativecamera.scan.WaterfallScanEngine
 import com.timewarpscan.nativecamera.util.BitmapUtils
+import com.timewarpscan.nativecamera.core.ads.AdManager
 import kotlinx.coroutines.launch
 
 /**
@@ -216,8 +217,8 @@ class CameraActivity : AppCompatActivity() {
                 isRecording = false
                 tvStatus.visibility = View.VISIBLE
                 tvStatus.text = "Scan complete — tap to save"
-                updateCaptureButton()
-            }
+                updateCaptureButton()                // Track action for ad frequency
+                AdManager.frequencyController.recordAction()            }
         }
     }
 
@@ -436,6 +437,8 @@ class CameraActivity : AppCompatActivity() {
                         if (uri != null) {
                             tvStatus.text = "Saved to gallery!"
                             Toast.makeText(this@CameraActivity, "Photo saved", Toast.LENGTH_SHORT).show()
+                            // Show interstitial if frequency allows
+                            AdManager.showInterstitialIfReady(this@CameraActivity)
                         } else {
                             tvStatus.text = "Save failed"
                             Toast.makeText(this@CameraActivity, "Failed to save", Toast.LENGTH_SHORT).show()
