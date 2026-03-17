@@ -11,6 +11,7 @@ import com.timewarpscan.nativecamera.databinding.ActivityHomeBinding
 import com.timewarpscan.nativecamera.model.VideoItem
 import com.timewarpscan.nativecamera.ui.CameraActivity
 import com.timewarpscan.nativecamera.ui.home.adapter.SectionAdapter
+import com.timewarpscan.nativecamera.ui.settings.SettingsActivity
 import kotlinx.coroutines.launch
 
 class HomeActivity : AppCompatActivity() {
@@ -25,7 +26,14 @@ class HomeActivity : AppCompatActivity() {
 
         setupRecyclerView()
         setupBottomNav()
+        setupTopBar()
         loadSections()
+    }
+
+    private fun setupTopBar() {
+        binding.btnSettings.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
     }
 
     private fun setupRecyclerView() {
