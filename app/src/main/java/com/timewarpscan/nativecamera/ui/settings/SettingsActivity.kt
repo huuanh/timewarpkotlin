@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.timewarpscan.nativecamera.core.iap.IAPManager
 import com.timewarpscan.nativecamera.core.preferences.AppPreferences
 import com.timewarpscan.nativecamera.databinding.ActivitySettingsBinding
+import com.timewarpscan.nativecamera.ui.iap.IAPActivity
 import com.timewarpscan.nativecamera.ui.language.SelectLanguageActivity
 
 class SettingsActivity : AppCompatActivity() {
@@ -35,7 +36,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupProBanner() {
         binding.bannerPro.setOnClickListener {
-            IAPManager.purchase(this, com.timewarpscan.nativecamera.core.iap.IAPConfig.PRODUCT_REMOVE_ADS)
+            startActivity(Intent(this, IAPActivity::class.java))
         }
     }
 

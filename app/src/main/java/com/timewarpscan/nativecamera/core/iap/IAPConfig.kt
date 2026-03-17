@@ -14,14 +14,15 @@ object IAPConfig {
 
     // --- Subscriptions ---
     const val SUB_MONTHLY = "sub_monthly_premium"
+    const val SUB_QUARTERLY = "sub_quarterly_premium"
     const val SUB_YEARLY = "sub_yearly_premium"
 
     /** All one-time product IDs to query. */
     val IN_APP_PRODUCTS = listOf(PRODUCT_PREMIUM, PRODUCT_REMOVE_ADS)
 
     /** All subscription IDs to query. */
-    val SUBSCRIPTION_PRODUCTS = listOf(SUB_MONTHLY, SUB_YEARLY)
+    val SUBSCRIPTION_PRODUCTS = listOf(SUB_MONTHLY, SUB_QUARTERLY, SUB_YEARLY)
 
     /** Product IDs that grant premium status (removes ads, unlocks features). */
-    val PREMIUM_PRODUCT_IDS = setOf(PRODUCT_PREMIUM, PRODUCT_REMOVE_ADS, SUB_MONTHLY, SUB_YEARLY)
+    val PREMIUM_PRODUCT_IDS = setOf(PRODUCT_PREMIUM, PRODUCT_REMOVE_ADS, SUB_MONTHLY, SUB_QUARTERLY, SUB_YEARLY)
 }

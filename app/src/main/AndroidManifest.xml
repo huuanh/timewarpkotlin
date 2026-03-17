@@ -60,6 +60,12 @@
             android:theme="@style/Theme.NativeCamera.Fullscreen" />
 
         <activity
+            android:name=".ui.iap.IAPActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.NativeCamera.Fullscreen" />
+
+        <activity
             android:name=".ui.CameraActivity"
             android:exported="false"
             android:screenOrientation="portrait"
