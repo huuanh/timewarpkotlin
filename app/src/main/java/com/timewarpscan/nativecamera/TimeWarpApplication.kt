@@ -5,6 +5,7 @@ import android.util.Log
 import com.timewarpscan.nativecamera.core.ads.AdManager
 import com.timewarpscan.nativecamera.core.config.ConfigManager
 import com.timewarpscan.nativecamera.core.iap.IAPManager
+import com.timewarpscan.nativecamera.core.preferences.AppPreferences
 
 /**
  * Application class — initializes all core modules in the correct order:
@@ -24,6 +25,10 @@ class TimeWarpApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // 0. Preferences — must be before everything
+        AppPreferences.init(this)
+        Log.d(TAG, "AppPreferences ready")
 
         // 1. Config — must be first, other modules read from it
         ConfigManager.init(this)
