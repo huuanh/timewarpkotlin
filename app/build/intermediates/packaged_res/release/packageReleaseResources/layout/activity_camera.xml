@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- OpenGL surface for camera preview + scan effect -->
+    <android.opengl.GLSurfaceView
+        android:id="@+id/glSurfaceView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- ==================== TOP BAR ==================== -->
+
+    <!-- Back button (top-left) -->
+    <ImageView
+        android:id="@+id/btnBack"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="40dp"
+        android:background="@drawable/bg_circle_button"
+        android:contentDescription="Back"
+        android:padding="8dp"
+        android:scaleType="centerInside"
+        android:src="@android:drawable/ic_menu_revert"
+        app:tint="#FFFFFF" />
+
+    <!-- Toolbar pill (center-top): direction, scan color, timer, speed -->
+    <LinearLayout
+        android:id="@+id/toolbar"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="40dp"
+        android:background="@drawable/bg_toolbar_pill"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="4dp">
+
+        <!-- Scan direction -->
+        <FrameLayout
+            android:id="@+id/btnDirection"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:id="@+id/icDirection"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="Direction"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_top_bot"
+                app:tint="#FFFFFF" />
+        </FrameLayout>
+
+        <!-- Scan line color -->
+        <FrameLayout
+            android:id="@+id/btnScanColor"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:id="@+id/icScanColor"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="Scan color"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_scan_color"
+                app:tint="#00FFFF" />
+        </FrameLayout>
+
+        <!-- Timer / countdown -->
+        <FrameLayout
+            android:id="@+id/btnTimer"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="Timer"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_countdown"
+                app:tint="#FFFFFF" />
+
+            <TextView
+                android:id="@+id/tvTimerBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="2dp"
+                android:background="@drawable/bg_badge"
+                android:paddingHorizontal="3dp"
+                android:paddingVertical="1dp"
+                android:textColor="#000000"
+                android:textSize="8sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="3s"
+                tools:visibility="visible" />
+        </FrameLayout>
+
+        <!-- Speed -->
+        <FrameLayout
+            android:id="@+id/btnSpeed"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="Speed"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_speed"
+                app:tint="#FFFFFF" />
+
+            <TextView
+                android:id="@+id/tvSpeedBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="2dp"
+                android:background="@drawable/bg_badge"
+                android:paddingHorizontal="3dp"
+                android:paddingVertical="1dp"
+                android:textColor="#000000"
+                android:textSize="8sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="2x"
+                tools:visibility="visible" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- ==================== TIMER COUNTDOWN OVERLAY ==================== -->
+    <TextView
+        android:id="@+id/tvTimerCountdown"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:shadowColor="#99000000"
+        android:shadowDx="0"
+        android:shadowDy="2"
+        android:shadowRadius="8"
+        android:textColor="#FFFFFF"
+        android:textSize="80sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <!-- ==================== STATUS TEXT ==================== -->
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="92dp"
+        android:background="#66000000"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp"
+        android:text="Tap to start scan"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
+    <!-- ==================== EFFECT SELECTOR PANEL ==================== -->
+    <LinearLayout
+        android:id="@+id/effectPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="160dp"
+        android:background="@drawable/bg_effect_panel"
+        android:orientation="vertical"
+        android:paddingTop="14dp"
+        android:paddingBottom="20dp"
+        android:visibility="gone">
+
+        <!-- Header: title + close -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Warp Effects"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/btnCloseEffects"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="Close"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                app:tint="#FFFFFF" />
+        </LinearLayout>
+
+        <!-- Effects grid -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvEffects"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="8dp" />
+    </LinearLayout>
+
+    <!-- ==================== BOTTOM CONTROLS ==================== -->
+    <LinearLayout
+        android:id="@+id/bottomControls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingTop="8dp"
+        android:paddingBottom="24dp">
+
+        <!-- Mode selector: Video | Photo -->
+        <LinearLayout
+            android:id="@+id/modeSelector"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_toolbar_pill"
+            android:orientation="horizontal"
+            android:padding="3dp">
+
+            <TextView
+                android:id="@+id/btnModeVideo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_mode_inactive"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="6dp"
+                android:text="Video"
+                android:textColor="#80FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnModePhoto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_mode_active"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="6dp"
+                android:text="Photo"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Row: Effects button | Capture button | Rotate camera -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="40dp">
+
+            <!-- Effects button (shows selected effect icon) -->
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center">
+
+                <ImageView
+                    android:id="@+id/btnEffects"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_gravity="center"
+                    android:contentDescription="Effects"
+                    android:scaleType="centerCrop"
+                    android:src="@drawable/ic_effect_normal" />
+            </FrameLayout>
+
+            <!-- Capture button -->
+            <ImageView
+                android:id="@+id/btnCapture"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_marginHorizontal="32dp"
+                android:contentDescription="Capture"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_camera" />
+
+            <!-- Switch camera -->
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center">
+
+                <ImageView
+                    android:id="@+id/btnSwitchCamera"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_gravity="center"
+                    android:contentDescription="Switch camera"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_rotate" />
+            </FrameLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+</FrameLayout>

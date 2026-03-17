@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TimeWarp Camera</string>
+    <style name="Theme.NativeCamera" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#00FFFF</item>
+        <item name="colorPrimaryVariant">#00CCCC</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
+    </style>
+    <style name="Theme.NativeCamera.Fullscreen">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+</resources>
