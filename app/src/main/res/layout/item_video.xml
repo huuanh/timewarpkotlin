@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="4dp">
+
+    <ImageView
+        android:id="@+id/imgThumbnail"
+        android:layout_width="120dp"
+        android:layout_height="160dp"
+        android:background="@drawable/bg_video_thumbnail"
+        android:clipToOutline="true"
+        android:contentDescription="Video thumbnail"
+        android:scaleType="centerCrop" />
+
+    <!-- Play icon overlay -->
+    <FrameLayout
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_play_overlay">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_gravity="center"
+            android:contentDescription="Play"
+            android:src="@android:drawable/ic_media_play"
+            android:scaleType="centerInside" />
+
+    </FrameLayout>
+
+</FrameLayout>

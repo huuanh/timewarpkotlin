@@ -125,6 +125,13 @@ class CameraActivity : AppCompatActivity() {
         setupModeSelector()
         setupBottomButtons()
 
+        // Apply effect from intent (e.g. from HomeActivity)
+        intent.getStringExtra("effect")?.let { effectId ->
+            if (effects.any { it.id == effectId }) {
+                selectedEffectId = effectId
+            }
+        }
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) {

@@ -9,7 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.viewpager2.widget.ViewPager2
 import com.timewarpscan.nativecamera.R
 import com.timewarpscan.nativecamera.databinding.ActivityOnboardingBinding
-import com.timewarpscan.nativecamera.ui.CameraActivity
+import com.timewarpscan.nativecamera.ui.home.HomeActivity
 
 class OnboardingActivity : AppCompatActivity() {
 
@@ -90,7 +90,7 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun goToHome() {
-        startActivity(Intent(this, CameraActivity::class.java))
+        startActivity(Intent(this, HomeActivity::class.java))
         finish()
     }
 }

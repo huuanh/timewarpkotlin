@@ -48,6 +48,12 @@
             android:theme="@style/Theme.NativeCamera.Fullscreen" />
 
         <activity
+            android:name=".ui.home.HomeActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.NativeCamera.Fullscreen" />
+
+        <activity
             android:name=".ui.CameraActivity"
             android:exported="false"
             android:screenOrientation="portrait"

@@ -11,7 +11,7 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import androidx.appcompat.app.AppCompatActivity
 import com.timewarpscan.nativecamera.core.preferences.AppPreferences
 import com.timewarpscan.nativecamera.databinding.ActivityLoadingBinding
-import com.timewarpscan.nativecamera.ui.CameraActivity
+import com.timewarpscan.nativecamera.ui.home.HomeActivity
 import com.timewarpscan.nativecamera.ui.language.SelectLanguageActivity
 
 class LoadingActivity : AppCompatActivity() {
@@ -34,7 +34,7 @@ class LoadingActivity : AppCompatActivity() {
         val target = if (AppPreferences.isFirstLaunch) {
             SelectLanguageActivity::class.java
         } else {
-            CameraActivity::class.java
+            HomeActivity::class.java
         }
         startActivity(Intent(this, target))
         finish()
