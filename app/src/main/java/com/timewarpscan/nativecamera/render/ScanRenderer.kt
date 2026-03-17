@@ -91,6 +91,41 @@ class ScanRenderer(
     private var viewWidth = 0
     private var viewHeight = 0
 
+    // Camera aspect-ratio correction (center-crop scale)
+    private val cameraMvpMatrix = FloatArray(16).apply { Matrix.setIdentityM(this, 0) }
+    private var camPortraitW = 0f
+    private var camPortraitH = 0f
+
+    /**
+     * Set actual camera buffer resolution for center-crop aspect ratio correction.
+     * Call from GL thread after camera resolution is known.
+     */
+    fun setCameraResolution(width: Int, height: Int) {
+        // Effective portrait dimensions (camera sensor may report landscape)
+        camPortraitW = minOf(width, height).toFloat()
+        camPortraitH = maxOf(width, height).toFloat()
+        if (viewWidth > 0 && viewHeight > 0) {
+            updateCameraCropScale()
+        }
+    }
+
+    private fun updateCameraCropScale() {
+        val viewAspect = viewWidth.toFloat() / viewHeight.toFloat()
+        val camAspect = camPortraitW / camPortraitH
+
+        Matrix.setIdentityM(cameraMvpMatrix, 0)
+        if (camAspect > viewAspect) {
+            // Camera is wider than view → crop sides
+            val scaleX = camAspect / viewAspect
+            Matrix.scaleM(cameraMvpMatrix, 0, scaleX, 1f, 1f)
+        } else {
+            // Camera is taller than view → crop top/bottom
+            val scaleY = viewAspect / camAspect
+            Matrix.scaleM(cameraMvpMatrix, 0, 1f, scaleY, 1f)
+        }
+        Log.d(TAG, "Camera crop scale: cam=${camPortraitW}x${camPortraitH} view=${viewWidth}x${viewHeight}")
+    }
+
     // Callback to notify CameraController that the SurfaceTexture is ready
     var onSurfaceTextureAvailable: ((SurfaceTexture) -> Unit)? = null
 
@@ -159,6 +194,11 @@ class ScanRenderer(
         // For rendering to screen, we use NDC [-1,1] with the quad
         // So we need identity MVP (quad already fills clip space)
         Matrix.setIdentityM(flipMvpMatrix, 0)
+
+        // Recalculate camera scale if resolution is already known
+        if (camPortraitW > 0f) {
+            updateCameraCropScale()
+        }
 
         // Create composite FBO
         createCompositeFBO(width, height)
@@ -326,7 +366,8 @@ class ScanRenderer(
         val mvpLoc = GLES20.glGetUniformLocation(programId, "uMVPMatrix")
         val texMatLoc = GLES20.glGetUniformLocation(programId, "uTexMatrix")
 
-        GLES20.glUniformMatrix4fv(mvpLoc, 1, false, flipMvpMatrix, 0)
+        // Use center-crop scale matrix for camera (preserves aspect ratio)
+        GLES20.glUniformMatrix4fv(mvpLoc, 1, false, cameraMvpMatrix, 0)
         GLES20.glUniformMatrix4fv(texMatLoc, 1, false, texMatrix, 0)
 
         val buf = quadBuffer ?: return

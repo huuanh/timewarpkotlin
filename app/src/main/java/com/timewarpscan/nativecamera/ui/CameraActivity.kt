@@ -214,7 +214,11 @@ class CameraActivity : AppCompatActivity() {
                     surfaceTexture = surfaceTexture,
                     previewWidth = 1080,
                     previewHeight = 1920
-                )
+                ) { width, height ->
+                    glSurfaceView.queueEvent {
+                        renderer.setCameraResolution(width, height)
+                    }
+                }
             }
         }
 

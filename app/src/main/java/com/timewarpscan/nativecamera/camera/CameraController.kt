@@ -43,7 +43,8 @@ class CameraController {
         lifecycleOwner: LifecycleOwner,
         surfaceTexture: SurfaceTexture,
         previewWidth: Int,
-        previewHeight: Int
+        previewHeight: Int,
+        onResolutionAvailable: ((Int, Int) -> Unit)? = null
     ) {
         this.surfaceTexture = surfaceTexture
 
@@ -78,6 +79,9 @@ class CameraController {
 
                 // Set default buffer size to match camera output
                 surfaceTexture.setDefaultBufferSize(resolution.width, resolution.height)
+
+                // Notify caller of actual camera resolution for aspect ratio correction
+                onResolutionAvailable?.invoke(resolution.width, resolution.height)
 
                 val surface = android.view.Surface(surfaceTexture)
                 request.provideSurface(surface, ContextCompat.getMainExecutor(context)) { result ->
