@@ -68,20 +68,9 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, SelectLanguageActivity::class.java))
         }
 
-        // Rate Us — placeholder for now
+        // Rate Us
         binding.itemRateUs.setOnClickListener {
-            try {
-                startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
-                )
-            } catch (_: Exception) {
-                startActivity(
-                    Intent(
-                        Intent.ACTION_VIEW,
-                        Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
-                    )
-                )
-            }
+            RateAppDialog().show(supportFragmentManager, "rate_dialog")
         }
 
         // Privacy Policy
