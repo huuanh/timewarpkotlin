@@ -58,6 +58,8 @@ class VideoRecorder {
     @Volatile
     private var recording = false
 
+    private var recordingStartNs = 0L
+
     /**
      * Prepare the encoder and EGL surface.
      *
@@ -99,6 +101,7 @@ class VideoRecorder {
 
     /** Start recording. Must be called after [prepare]. */
     fun start() {
+        recordingStartNs = System.nanoTime()
         recording = true
     }
 
@@ -120,6 +123,9 @@ class VideoRecorder {
 
     /** Swap buffers on the encoder surface — presents the rendered frame to the encoder. */
     fun swapBuffers() {
+        // Set per-frame presentation time so the muxer records correct duration.
+        val pts = System.nanoTime() - recordingStartNs
+        EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, pts)
         EGL14.eglSwapBuffers(eglDisplay, eglSurface)
     }
 
@@ -150,7 +156,9 @@ class VideoRecorder {
             c.signalEndOfInputStream()
             drainEncoder(true)
 
-            muxer?.stop()
+            if (muxerStarted) {
+                muxer?.stop()
+            }
             muxer?.release()
             c.stop()
             c.release()
@@ -229,7 +237,12 @@ class VideoRecorder {
 
     private fun releaseEGL() {
         if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
-            EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+            // IMPORTANT: Do NOT call eglMakeCurrent(NO_CONTEXT) here.
+            // stop() is called from the GL thread (via queueEvent). At that point
+            // the current EGL context belongs to GLSurfaceView — calling
+            // eglMakeCurrent(NO_CONTEXT) would detach it and crash the next frame.
+            // The encoder context is already non-current (makeNonCurrent was called
+            // after the last encoded frame), so we can destroy it directly.
             if (eglSurface != EGL14.EGL_NO_SURFACE) {
                 EGL14.eglDestroySurface(eglDisplay, eglSurface)
             }

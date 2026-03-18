@@ -24,13 +24,16 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import android.opengl.EGL14
 import com.timewarpscan.nativecamera.R
 import com.timewarpscan.nativecamera.camera.CameraController
+import com.timewarpscan.nativecamera.record.VideoRecorder
 import com.timewarpscan.nativecamera.render.ScanRenderer
 import com.timewarpscan.nativecamera.scan.WaterfallScanEngine
 import com.timewarpscan.nativecamera.util.BitmapUtils
 import com.timewarpscan.nativecamera.core.ads.AdManager
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * Main activity — fullscreen camera preview with waterfall scan effect.
@@ -73,6 +76,9 @@ class CameraActivity : AppCompatActivity() {
     private var mode: String = "photo"              // "photo" or "video"
     private var isRecording = false
     private var isScanning = false
+
+    // --- Video ---
+    private var videoRecorder: VideoRecorder? = null
     private var selectedEffectId: String = "normal"
 
     private var scanReversed = false
@@ -227,11 +233,18 @@ class CameraActivity : AppCompatActivity() {
         renderer.onScanComplete = {
             runOnUiThread {
                 isScanning = false
-                isRecording = false
-                tvStatus.visibility = View.VISIBLE
-                tvStatus.text = "Scan complete — tap to save"
-                updateCaptureButton()                // Track action for ad frequency
-                AdManager.frequencyController.recordAction()            }
+                if (mode == "video") {
+                    // Scan sweep finished during video recording — keep recording,
+                    // just update status so user knows they can stop.
+                    tvStatus.text = "Sweep done — tap to stop"
+                } else {
+                    isRecording = false
+                    tvStatus.visibility = View.VISIBLE
+                    tvStatus.text = "Scan complete — tap to save"
+                    AdManager.frequencyController.recordAction()
+                }
+                updateCaptureButton()
+            }
         }
     }
 
@@ -364,6 +377,7 @@ class CameraActivity : AppCompatActivity() {
     private fun updateCaptureButton() {
         when {
             isScanning -> btnCapture.setImageResource(R.drawable.ic_pause)
+            mode == "video" && isRecording -> btnCapture.setImageResource(R.drawable.ic_pause)
             mode == "video" -> btnCapture.setImageResource(R.drawable.ic_video)
             else -> btnCapture.setImageResource(R.drawable.ic_camera)
         }
@@ -372,7 +386,21 @@ class CameraActivity : AppCompatActivity() {
     private fun handleCapture() {
         val timerSeconds = timerOptions[timerIndex]
 
-        // Effects without a scan line capture instantly
+        // VIDEO MODE
+        if (mode == "video") {
+            if (isRecording) {
+                stopVideoRecording()
+            } else {
+                if (timerSeconds > 0) {
+                    startCountdown(timerSeconds) { startVideoRecording() }
+                } else {
+                    startVideoRecording()
+                }
+            }
+            return
+        }
+
+        // PHOTO MODE — Effects without a scan line capture instantly
         val isScanEffect = selectedEffectId == "waterfall" || selectedEffectId == "single"
         if (!isScanEffect && scanEngine.currentState() == WaterfallScanEngine.State.IDLE) {
             if (timerSeconds > 0) {
@@ -429,6 +457,65 @@ class CameraActivity : AppCompatActivity() {
             } else {
                 runOnUiThread {
                     tvStatus.text = "Capture failed"
+                    tvStatus.postDelayed({ tvStatus.visibility = View.GONE }, 2000)
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Video recording
+    // -----------------------------------------------------------------------
+
+    private fun startVideoRecording() {
+        val isScanEffect = selectedEffectId == "waterfall" || selectedEffectId == "single"
+        val outputPath = File(cacheDir, "video_${System.currentTimeMillis()}.mp4").absolutePath
+        isRecording = true
+        if (isScanEffect) isScanning = true
+        tvStatus.visibility = View.VISIBLE
+        tvStatus.text = "Recording\u2026 tap to stop"
+        updateCaptureButton()
+
+        glSurfaceView.queueEvent {
+            // Start scan engine for scan effects so the sweep appears in the video.
+            if (isScanEffect) {
+                renderer.clearComposite()
+                scanEngine.startScan()
+            }
+            val recorder = VideoRecorder()
+            recorder.prepare(renderer.rendererWidth, renderer.rendererHeight, 30, outputPath, EGL14.eglGetCurrentContext())
+            recorder.start()
+            renderer.videoRecorder = recorder
+            videoRecorder = recorder
+        }
+    }
+
+    private fun stopVideoRecording() {
+        isRecording = false
+        isScanning = false
+        tvStatus.visibility = View.VISIBLE
+        tvStatus.text = "Saving\u2026"
+        updateCaptureButton()
+
+        glSurfaceView.queueEvent {
+            // Reset scan engine in case it was running for scan effect.
+            scanEngine.reset()
+            renderer.clearComposite()
+            val path = videoRecorder?.stop()
+            renderer.videoRecorder = null
+            videoRecorder = null
+
+            runOnUiThread {
+                tvStatus.visibility = View.GONE
+                if (path != null) {
+                    startActivity(
+                        Intent(this@CameraActivity, PreviewActivity::class.java).apply {
+                            putExtra(PreviewActivity.EXTRA_TEMP_PATH, path)
+                            putExtra(PreviewActivity.EXTRA_IS_VIDEO, true)
+                        }
+                    )
+                } else {
+                    tvStatus.text = "Recording failed"
                     tvStatus.postDelayed({ tvStatus.visibility = View.GONE }, 2000)
                 }
             }

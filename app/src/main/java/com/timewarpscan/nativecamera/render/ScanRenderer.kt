@@ -35,9 +35,12 @@ import javax.microedition.khronos.opengles.GL10
  *   corresponds to the TOP of the screen (matching Android coords).
  */
 class ScanRenderer(
-    private val scanEngine: WaterfallScanEngine,
-    private val videoRecorder: VideoRecorder? = null
+    private val scanEngine: WaterfallScanEngine
 ) : GLSurfaceView.Renderer {
+
+    /** Set this to start/stop video recording. Must only be assigned from the GL thread. */
+    @Volatile
+    var videoRecorder: VideoRecorder? = null
 
     companion object {
         private const val TAG = "ScanRenderer"
@@ -101,12 +104,23 @@ class ScanRenderer(
     private var fboId = 0
     private var fboTextureId = 0
 
+    // Output FBO — holds the final composed frame so the encoder can blit it
+    // as a regular TEXTURE_2D without ever touching the camera OES texture.
+    private var outputFboId = 0
+    private var outputTexId = 0
+
     // Quad VBO
     private var quadBuffer: FloatBuffer? = null
 
     // Surface dimensions
     private var viewWidth = 0
     private var viewHeight = 0
+
+    /** Surface width in pixels — valid after onSurfaceChanged. */
+    val rendererWidth: Int get() = viewWidth
+
+    /** Surface height in pixels — valid after onSurfaceChanged. */
+    val rendererHeight: Int get() = viewHeight
 
     // Camera aspect-ratio correction (center-crop scale)
     private val cameraMvpMatrix = FloatArray(16).apply { Matrix.setIdentityM(this, 0) }
@@ -219,6 +233,9 @@ class ScanRenderer(
 
         // Create composite FBO
         createCompositeFBO(width, height)
+
+        // Create output FBO (final rendered frame for encoder)
+        createOutputFBO(width, height)
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -260,11 +277,22 @@ class ScanRenderer(
         // --- Step 2: Render to screen ---
         renderToScreen(scanState)
 
-        // --- Step 3: If recording, also render to encoder surface ---
+        // --- Step 3: If recording, render composition to outputFBO (GL context, OES is safe here),
+        //             then switch to encoder context and blit outputTex (TEXTURE_2D — no OES involved).
         videoRecorder?.let { recorder ->
-            if (recorder.isRecording()) {
-                recorder.makeCurrent()
+            if (recorder.isRecording() && outputFboId != 0) {
+                // 3a. Bake final frame into outputFBO while OES context is still current
+                GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, outputFboId)
+                GLES20.glViewport(0, 0, viewWidth, viewHeight)
+                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
                 renderComposition(scanState)
+                GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+
+                // 3b. Switch to encoder EGL surface and blit the plain texture
+                recorder.makeCurrent()
+                GLES20.glViewport(0, 0, viewWidth, viewHeight)
+                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+                drawEncoderFrame()
                 recorder.swapBuffers()
                 recorder.makeNonCurrent()
                 recorder.frameAvailable()
@@ -503,6 +531,38 @@ class ScanRenderer(
     }
 
     /** Draw the composite FBO texture as a full-screen quad. */
+    /**
+     * Blit [outputTexId] (a plain TEXTURE_2D) to the currently bound EGL surface.
+     * Called from the encoder's EGL context — safe because no OES texture is used.
+     */
+    private fun drawEncoderFrame() {
+        GLES20.glUseProgram(textureProgramId)
+
+        val posLoc = GLES20.glGetAttribLocation(textureProgramId, "aPosition")
+        val texLoc = GLES20.glGetAttribLocation(textureProgramId, "aTexCoord")
+        val mvpLoc = GLES20.glGetUniformLocation(textureProgramId, "uMVPMatrix")
+
+        GLES20.glUniformMatrix4fv(mvpLoc, 1, false, flipMvpMatrix, 0)
+
+        val buf = quadBuffer ?: return
+        buf.position(0)
+        GLES20.glVertexAttribPointer(posLoc, 2, GLES20.GL_FLOAT, false, COORDS_PER_VERTEX * FLOAT_SIZE, buf)
+        GLES20.glEnableVertexAttribArray(posLoc)
+
+        buf.position(2)
+        GLES20.glVertexAttribPointer(texLoc, 2, GLES20.GL_FLOAT, false, COORDS_PER_VERTEX * FLOAT_SIZE, buf)
+        GLES20.glEnableVertexAttribArray(texLoc)
+
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, outputTexId)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(textureProgramId, "uTexture"), 0)
+
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+
+        GLES20.glDisableVertexAttribArray(posLoc)
+        GLES20.glDisableVertexAttribArray(texLoc)
+    }
+
     private fun drawCompositeTexture() {
         GLES20.glUseProgram(textureProgramId)
 
@@ -616,6 +676,36 @@ class ScanRenderer(
      * Create the composite framebuffer object with an RGBA texture attachment.
      * This stores the accumulated scan result (frozen strips from camera).
      */
+    private fun createOutputFBO(width: Int, height: Int) {
+        if (outputFboId != 0) {
+            GLES20.glDeleteFramebuffers(1, intArrayOf(outputFboId), 0)
+            GLES20.glDeleteTextures(1, intArrayOf(outputTexId), 0)
+        }
+        val texIds = IntArray(1)
+        GLES20.glGenTextures(1, texIds, 0)
+        outputTexId = texIds[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, outputTexId)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexImage2D(
+            GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA,
+            width, height, 0,
+            GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null
+        )
+        val fboIds = IntArray(1)
+        GLES20.glGenFramebuffers(1, fboIds, 0)
+        outputFboId = fboIds[0]
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, outputFboId)
+        GLES20.glFramebufferTexture2D(
+            GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0,
+            GLES20.GL_TEXTURE_2D, outputTexId, 0
+        )
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+    }
+
     private fun createCompositeFBO(width: Int, height: Int) {
         // Delete previous FBO if exists
         if (fboId != 0) {
@@ -793,6 +883,14 @@ class ScanRenderer(
         if (fboTextureId != 0) {
             GLES20.glDeleteTextures(1, intArrayOf(fboTextureId), 0)
             fboTextureId = 0
+        }
+        if (outputFboId != 0) {
+            GLES20.glDeleteFramebuffers(1, intArrayOf(outputFboId), 0)
+            outputFboId = 0
+        }
+        if (outputTexId != 0) {
+            GLES20.glDeleteTextures(1, intArrayOf(outputTexId), 0)
+            outputTexId = 0
         }
         if (cameraTextureId != 0) {
             GLES20.glDeleteTextures(1, intArrayOf(cameraTextureId), 0)
