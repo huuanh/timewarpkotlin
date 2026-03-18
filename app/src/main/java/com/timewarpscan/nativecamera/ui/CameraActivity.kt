@@ -74,7 +74,7 @@ class CameraActivity : AppCompatActivity() {
     private var isScanning = false
     private var selectedEffectId: String = "normal"
 
-    private var scanDirection: String = "down"       // "down" / "up"
+    private var scanReversed = false
     private val scanLineColors = listOf("#00FFFF", "#FF0000", "#00FF00", "#FFFF00", "#FF00FF", "#FFFFFF")
     private var scanLineColorIndex = 0
     private val timerOptions = intArrayOf(0, 3, 5, 10)
@@ -131,6 +131,7 @@ class CameraActivity : AppCompatActivity() {
                 selectedEffectId = effectId
             }
         }
+        updateToolbarForEffect()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
@@ -242,17 +243,23 @@ class CameraActivity : AppCompatActivity() {
 
         // Scan direction toggle
         btnDirection.setOnClickListener {
-            scanDirection = if (scanDirection == "down") "up" else "down"
-            val rotation = if (scanDirection == "up") 180f else 0f
-            icDirection.rotation = rotation
+            scanReversed = !scanReversed
+            icDirection.rotation = if (scanReversed) 180f else 0f
+            if (::renderer.isInitialized) renderer.scanReversed = scanReversed
         }
 
         // Scan line color cycle
         btnScanColor.setOnClickListener {
             scanLineColorIndex = (scanLineColorIndex + 1) % scanLineColors.size
-            val color = Color.parseColor(scanLineColors[scanLineColorIndex])
+            val hex = scanLineColors[scanLineColorIndex]
+            val color = Color.parseColor(hex)
             icScanColor.setColorFilter(color, PorterDuff.Mode.SRC_IN)
-            // TODO: Pass color to renderer's scan line
+            if (::renderer.isInitialized) {
+                val r = Color.red(color) / 255f
+                val g = Color.green(color) / 255f
+                val b = Color.blue(color) / 255f
+                renderer.scanLineColor = floatArrayOf(r, g, b, 1f)
+            }
         }
 
         // Timer cycle
@@ -286,6 +293,19 @@ class CameraActivity : AppCompatActivity() {
     // -----------------------------------------------------------------------
     // Mode Selector (Video / Photo)
     // -----------------------------------------------------------------------
+
+    private fun updateToolbarForEffect() {
+        val isScanEffect = selectedEffectId == "waterfall" || selectedEffectId == "single"
+        btnDirection.visibility = if (isScanEffect) View.VISIBLE else View.GONE
+        btnScanColor.visibility = if (isScanEffect) View.VISIBLE else View.GONE
+        // Reset direction state when effect changes
+        scanReversed = false
+        icDirection.rotation = 0f
+        if (::renderer.isInitialized) renderer.scanReversed = false
+        // Use the correct direction icon for the active scan type
+        val dirIcon = if (selectedEffectId == "single") R.drawable.ic_left_right else R.drawable.ic_top_bot
+        icDirection.setImageResource(dirIcon)
+    }
 
     private fun setupModeSelector() {
         updateModeUI()
@@ -351,6 +371,17 @@ class CameraActivity : AppCompatActivity() {
     private fun handleCapture() {
         val timerSeconds = timerOptions[timerIndex]
 
+        // Effects without a scan line capture instantly
+        val isScanEffect = selectedEffectId == "waterfall" || selectedEffectId == "single"
+        if (!isScanEffect && scanEngine.currentState() == WaterfallScanEngine.State.IDLE) {
+            if (timerSeconds > 0) {
+                startCountdown(timerSeconds) { captureInstantPhoto() }
+            } else {
+                captureInstantPhoto()
+            }
+            return
+        }
+
         when (scanEngine.currentState()) {
             WaterfallScanEngine.State.IDLE -> {
                 if (timerSeconds > 0) {
@@ -366,6 +397,33 @@ class CameraActivity : AppCompatActivity() {
             WaterfallScanEngine.State.COMPLETE -> {
                 // Save the result
                 saveCompositePhoto()
+            }
+        }
+    }
+
+    private fun captureInstantPhoto() {
+        tvStatus.visibility = View.VISIBLE
+        tvStatus.text = "Saving…"
+
+        glSurfaceView.queueEvent {
+            val bitmap = renderer.captureCurrentFrame()
+            if (bitmap != null) {
+                lifecycleScope.launch {
+                    val uri = BitmapUtils.saveToGallery(this@CameraActivity, bitmap)
+                    bitmap.recycle()
+                    runOnUiThread {
+                        if (uri != null) {
+                            tvStatus.text = "Saved to gallery!"
+                            Toast.makeText(this@CameraActivity, "Photo saved", Toast.LENGTH_SHORT).show()
+                            AdManager.showInterstitialIfReady(this@CameraActivity)
+                        } else {
+                            tvStatus.text = "Save failed"
+                        }
+                        tvStatus.postDelayed({ tvStatus.visibility = View.GONE }, 2000)
+                    }
+                }
+            } else {
+                runOnUiThread { tvStatus.text = "Capture failed" }
             }
         }
     }
@@ -414,6 +472,7 @@ class CameraActivity : AppCompatActivity() {
             if (::renderer.isInitialized) {
                 renderer.currentEffect = effect.id
             }
+            updateToolbarForEffect()
         }
 
         rvEffects.layoutManager = GridLayoutManager(this, 4)

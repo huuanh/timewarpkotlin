@@ -61,6 +61,15 @@ class ScanRenderer(
         private const val FLOAT_SIZE = 4
     }
 
+    private enum class ScanMode { NONE, VERTICAL, HORIZONTAL }
+
+    private val scanMode: ScanMode
+        get() = when (currentEffect) {
+            "waterfall" -> ScanMode.VERTICAL
+            "single"    -> ScanMode.HORIZONTAL
+            else        -> ScanMode.NONE
+        }
+
     // --- GL resources ---
     private var cameraTextureId = 0
     private var surfaceTexture: SurfaceTexture? = null
@@ -79,6 +88,14 @@ class ScanRenderer(
     /** Currently active camera effect. Set from the UI thread; read on GL thread. */
     @Volatile
     var currentEffect: String = "normal"
+
+    /** Scan line color (RGBA). Can be updated from the UI thread. */
+    @Volatile
+    var scanLineColor: FloatArray = floatArrayOf(0f, 1f, 1f, 1f)
+
+    /** If true, reverses the scan direction (bottom→top for VERTICAL, right→left for HORIZONTAL). */
+    @Volatile
+    var scanReversed: Boolean = false
 
     // Composite FBO
     private var fboId = 0
@@ -211,12 +228,33 @@ class ScanRenderer(
         st.updateTexImage()
         st.getTransformMatrix(texMatrix)
 
+        // Update scan engine length based on current effect's scan axis
+        val mode = scanMode
+        scanEngine.previewHeight = if (mode == ScanMode.HORIZONTAL) viewWidth else viewHeight
+
         // Get current scan state
         val scanState = scanEngine.update()
 
         // --- Step 1: If scanning, copy camera strip into composite FBO ---
-        if (scanState.state == WaterfallScanEngine.State.SCANNING && scanState.scanY > scanState.lastScanY) {
-            copyStripToComposite(scanState.lastScanY, scanState.scanY)
+        if (mode != ScanMode.NONE && scanState.state == WaterfallScanEngine.State.SCANNING && scanState.scanY > scanState.lastScanY) {
+            val from = scanState.lastScanY
+            val to = scanState.scanY
+            val delta = to - from
+            when (mode) {
+                ScanMode.VERTICAL -> {
+                    // Forward: glY = viewHeight - to (strip at top of accumulated area)
+                    // Reversed: glY = from (strip accumulates from bottom upward)
+                    val glY = if (scanReversed) from else (viewHeight - to)
+                    copyToCompositeGL(0, glY, viewWidth, delta)
+                }
+                ScanMode.HORIZONTAL -> {
+                    // Forward: glX = from (strip accumulates left→right)
+                    // Reversed: glX = viewWidth - to (strip accumulates right→left)
+                    val glX = if (scanReversed) (viewWidth - to) else from
+                    copyToCompositeGL(glX, 0, delta, viewHeight)
+                }
+                else -> {}
+            }
         }
 
         // --- Step 2: Render to screen ---
@@ -250,29 +288,16 @@ class ScanRenderer(
     // -----------------------------------------------------------------------
 
     /**
-     * Copy pixels from camera texture into the composite FBO.
-     *
-     * Uses GL scissor test to restrict drawing to just the strip between
-     * [fromY] and [toY]. The camera texture is drawn as a full-screen quad,
-     * but only the scissored region is written to the FBO.
-     *
-     * Coordinates are in "screen space" where Y=0 is top.
-     * In GL framebuffer coords, we need to flip: glY = height - screenY.
+     * Copy a rectangular region into the composite FBO using GL scissor.
+     * All coordinates are in GL space (Y=0 bottom).
      */
-    private fun copyStripToComposite(fromY: Int, toY: Int) {
+    private fun copyToCompositeGL(glX: Int, glY: Int, glWidth: Int, glHeight: Int) {
+        if (glWidth <= 0 || glHeight <= 0) return
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fboId)
         GLES20.glViewport(0, 0, viewWidth, viewHeight)
-
-        // Convert screen coords (Y=0 top) to GL coords (Y=0 bottom)
-        val glBottom = viewHeight - toY
-        val stripHeight = toY - fromY
-
         GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
-        GLES20.glScissor(0, glBottom, viewWidth, stripHeight)
-
-        // Draw the full camera frame — only the scissored strip is actually written
+        GLES20.glScissor(glX, glY, glWidth, glHeight)
         drawCameraTexture()
-
         GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
     }
@@ -304,44 +329,131 @@ class ScanRenderer(
         val isScanning = scanState.state == WaterfallScanEngine.State.SCANNING
         val isComplete = scanState.state == WaterfallScanEngine.State.COMPLETE
 
-        // Layer 1: Live camera preview (only draw below scan line during scan,
-        // or not at all when complete — the composite covers everything)
-        if (!isComplete) {
-            if (isScanning) {
-                // Only show live feed below the scan line
-                val glBottom = 0
-                val glHeight = viewHeight - scanState.scanY
-                GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
-                GLES20.glScissor(0, glBottom, viewWidth, glHeight)
-                drawCameraTexture()
-                GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
-            } else {
-                // IDLE: show full camera preview
+        when (scanMode) {
+            ScanMode.NONE -> {
+                // No scan — always show live camera with effect shader
                 drawCameraTexture()
             }
-        }
+            ScanMode.VERTICAL -> {
+                val scanY = scanState.scanY
+                // In reversed mode the visual scan line starts at screen-bottom and moves up.
+                // actualScanScreenY: screen Y (0=top) of the scan line.
+                val actualScanScreenY = if (scanReversed) viewHeight - scanY else scanY
 
-        // Layer 2: Composite image (above scan line during scan, full when complete)
-        if (isScanning || isComplete) {
-            if (isScanning) {
-                // Show composite above scan line
-                val glBottom = viewHeight - scanState.scanY
-                val glHeight = scanState.scanY
-                if (glHeight > 0) {
-                    GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
-                    GLES20.glScissor(0, glBottom, viewWidth, glHeight)
-                    drawCompositeTexture()
-                    GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+                // Layer 1: Live camera on the "ahead-of-scan" side
+                if (!isComplete) {
+                    if (isScanning) {
+                        if (!scanReversed) {
+                            // Forward (top→bottom): live camera is BELOW scan line
+                            // GL: y=0...(viewHeight-scanY)
+                            val glH = viewHeight - scanY
+                            if (glH > 0) {
+                                GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+                                GLES20.glScissor(0, 0, viewWidth, glH)
+                                drawCameraTexture()
+                                GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+                            }
+                        } else {
+                            // Reversed (bottom→top): live camera is ABOVE scan line
+                            // GL: y=scanY...viewHeight
+                            val glH = viewHeight - scanY
+                            if (glH > 0) {
+                                GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+                                GLES20.glScissor(0, scanY, viewWidth, glH)
+                                drawCameraTexture()
+                                GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+                            }
+                        }
+                    } else {
+                        drawCameraTexture()
+                    }
                 }
-            } else {
-                // COMPLETE: show full composite
-                drawCompositeTexture()
+                // Layer 2: Composite on the "already-scanned" side
+                if (isScanning || isComplete) {
+                    if (isScanning) {
+                        if (!scanReversed) {
+                            // Forward: composite is ABOVE scan line → GL y=(viewHeight-scanY)...viewHeight
+                            val glBottom = viewHeight - scanY
+                            if (scanY > 0) {
+                                GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+                                GLES20.glScissor(0, glBottom, viewWidth, scanY)
+                                drawCompositeTexture()
+                                GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+                            }
+                        } else {
+                            // Reversed: composite is BELOW scan line → GL y=0...scanY
+                            if (scanY > 0) {
+                                GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+                                GLES20.glScissor(0, 0, viewWidth, scanY)
+                                drawCompositeTexture()
+                                GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+                            }
+                        }
+                    } else {
+                        drawCompositeTexture()
+                    }
+                }
+                // Layer 3: Horizontal scan line at visual position
+                if (isScanning) drawScanLine(actualScanScreenY)
             }
-        }
+            ScanMode.HORIZONTAL -> {
+                val scanX = scanState.scanY // scanY repurposed as X position
+                // actualScanScreenX: screen X of the scan line.
+                val actualScanScreenX = if (scanReversed) viewWidth - scanX else scanX
 
-        // Layer 3: Cyan scan line
-        if (isScanning) {
-            drawScanLine(scanState.scanY)
+                // Layer 1: Live camera on the "ahead-of-scan" side
+                if (!isComplete) {
+                    if (isScanning) {
+                        if (!scanReversed) {
+                            // Forward (left→right): live camera is RIGHT of scan line
+                            val glW = viewWidth - scanX
+                            if (glW > 0) {
+                                GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+                                GLES20.glScissor(scanX, 0, glW, viewHeight)
+                                drawCameraTexture()
+                                GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+                            }
+                        } else {
+                            // Reversed (right→left): live camera is LEFT of scan line
+                            if (actualScanScreenX > 0) {
+                                GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+                                GLES20.glScissor(0, 0, actualScanScreenX, viewHeight)
+                                drawCameraTexture()
+                                GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+                            }
+                        }
+                    } else {
+                        drawCameraTexture()
+                    }
+                }
+                // Layer 2: Composite on the "already-scanned" side
+                if (isScanning || isComplete) {
+                    if (isScanning) {
+                        if (!scanReversed) {
+                            // Forward: composite is LEFT of scan line
+                            if (scanX > 0) {
+                                GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+                                GLES20.glScissor(0, 0, scanX, viewHeight)
+                                drawCompositeTexture()
+                                GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+                            }
+                        } else {
+                            // Reversed: composite is RIGHT of scan line
+                            val glW = viewWidth - actualScanScreenX
+                            if (glW > 0) {
+                                GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+                                GLES20.glScissor(actualScanScreenX, 0, glW, viewHeight)
+                                drawCompositeTexture()
+                                GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+                            }
+                        }
+                    } else {
+                        drawCompositeTexture()
+                    }
+                }
+                // Layer 3: Vertical scan line at visual position
+                if (isScanning) drawVerticalScanLine(actualScanScreenX)
+            }
         }
     }
 
@@ -351,9 +463,10 @@ class ScanRenderer(
 
     /** Draw the camera OES texture as a full-screen quad, applying the current effect. */
     private fun drawCameraTexture() {
-        // Pick the right program: effect program if available, otherwise default camera
+        // Scan-line effects (waterfall/single) implement their effect via strip compositing,
+        // not via a shader — use plain camera shader so the live preview looks normal.
         val effect = currentEffect
-        val programId = if (effect != "normal") {
+        val programId = if (effect != "normal" && scanMode == ScanMode.NONE) {
             effectPrograms[effect] ?: cameraProgramId
         } else {
             cameraProgramId
@@ -432,7 +545,7 @@ class ScanRenderer(
 
         // Use the ortho projection (Y=0 at top, Y=height at bottom)
         GLES20.glUniformMatrix4fv(mvpLoc, 1, false, mvpMatrix, 0)
-        GLES20.glUniform4fv(colorLoc, 1, SCAN_LINE_COLOR, 0)
+        GLES20.glUniform4fv(colorLoc, 1, scanLineColor, 0)
 
         // Build a thin horizontal quad at scanY
         val y1 = scanY.toFloat()
@@ -459,6 +572,39 @@ class ScanRenderer(
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
+        GLES20.glDisableVertexAttribArray(posLoc)
+    }
+
+    /** Draw a vertical scan line at [scanX] (screen coords, X=0 at left) for horizontal scan mode. */
+    private fun drawVerticalScanLine(scanX: Int) {
+        GLES20.glUseProgram(colorProgramId)
+
+        val mvpLoc   = GLES20.glGetUniformLocation(colorProgramId, "uMVPMatrix")
+        val colorLoc = GLES20.glGetUniformLocation(colorProgramId, "uColor")
+        val posLoc   = GLES20.glGetAttribLocation(colorProgramId, "aPosition")
+
+        GLES20.glUniformMatrix4fv(mvpLoc, 1, false, mvpMatrix, 0)
+        GLES20.glUniform4fv(colorLoc, 1, scanLineColor, 0)
+
+        val x1 = scanX.toFloat()
+        val x2 = (scanX + SCAN_LINE_THICKNESS).toFloat()
+        val h  = viewHeight.toFloat()
+        val lineCoords = floatArrayOf(
+            x1, 0f,   // top-left
+            x2, 0f,   // top-right
+            x1, h,    // bottom-left
+            x2, h     // bottom-right
+        )
+
+        val lineBuf = ByteBuffer
+            .allocateDirect(lineCoords.size * FLOAT_SIZE)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .apply { put(lineCoords); position(0) }
+
+        GLES20.glVertexAttribPointer(posLoc, 2, GLES20.GL_FLOAT, false, 0, lineBuf)
+        GLES20.glEnableVertexAttribArray(posLoc)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         GLES20.glDisableVertexAttribArray(posLoc)
     }
 
@@ -595,12 +741,14 @@ class ScanRenderer(
             System.arraycopy(pixels, srcOffset, flipped, dstOffset, viewWidth)
         }
 
-        // RGBA from GL → ARGB for Bitmap: swap R and B channels
+        // RGBA from GL → ARGB for Bitmap.
+        // Android drivers return bytes in BGRA order despite the GL_RGBA flag:
+        //   bits 0-7  = B, bits 8-15 = G, bits 16-23 = R, bits 24-31 = A
         for (i in flipped.indices) {
             val pixel = flipped[i]
-            val r = (pixel and 0xFF)
+            val b = (pixel and 0xFF)
             val g = ((pixel shr 8) and 0xFF)
-            val b = ((pixel shr 16) and 0xFF)
+            val r = ((pixel shr 16) and 0xFF)
             val a = ((pixel shr 24) and 0xFF)
             flipped[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
         }
@@ -617,6 +765,23 @@ class ScanRenderer(
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+    }
+
+    /**
+     * Capture the current camera frame with effect applied into a Bitmap.
+     * Used for instant photo capture when no scan is needed (NONE scan mode).
+     * Must be called from the GL thread.
+     */
+    fun captureCurrentFrame(): Bitmap? {
+        if (fboId == 0 || viewWidth <= 0 || viewHeight <= 0) return null
+        // Render live camera + effect into the composite FBO
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fboId)
+        GLES20.glViewport(0, 0, viewWidth, viewHeight)
+        GLES20.glClearColor(0f, 0f, 0f, 1f)
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        drawCameraTexture()
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        return readCompositePixels()
     }
 
     /** Release all GL resources. */
