@@ -18,9 +18,6 @@ import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import com.timewarpscan.nativecamera.core.config.ConfigKeys
 import com.timewarpscan.nativecamera.core.config.ConfigManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 /**
  * Centralized ad management — singleton.
@@ -28,6 +25,9 @@ import kotlinx.coroutines.launch
  * Manages all AdMob ad formats with preloading, caching, automatic reload,
  * and frequency control. Integrates with [ConfigManager] for feature flags
  * and premium state.
+ *
+ * Interstitial ads are cached per ad unit ID in a Map, so multiple
+ * placements can be preloaded independently and shown by ID.
  *
  * Lifecycle: call [init] from Application.onCreate(), then [loadAds].
  * Call [destroyAds] when the app is being destroyed.
@@ -41,13 +41,13 @@ object AdManager {
     private lateinit var appContext: Context
     private var isInitialized = false
 
-    // --- Cached ads ---
-    private var interstitialAd: InterstitialAd? = null
+    // --- Cached ads (interstitials keyed by ad unit ID) ---
+    private val interstitialAds = mutableMapOf<String, InterstitialAd>()
     private var rewardedAd: RewardedAd? = null
     private var nativeAd: NativeAd? = null
 
     // --- Loading state (prevent double-loads) ---
-    private var isLoadingInterstitial = false
+    private val loadingInterstitialIds = mutableSetOf<String>()
     private var isLoadingRewarded = false
     private var isLoadingNative = false
 
@@ -93,69 +93,99 @@ object AdManager {
             return
         }
 
-        if (ConfigManager.getBoolean(ConfigKeys.INTERSTITIAL_ENABLED)) loadInterstitial()
+        if (ConfigManager.getBoolean(ConfigKeys.INTERSTITIAL_ENABLED)) {
+            loadAllInterstitials()
+        }
         if (ConfigManager.getBoolean(ConfigKeys.REWARDED_ENABLED)) loadRewarded()
         if (ConfigManager.getBoolean(ConfigKeys.NATIVE_AD_ENABLED)) loadNativeAd()
         if (ConfigManager.getBoolean(ConfigKeys.APP_OPEN_AD_ENABLED)) appOpenAdManager.loadAd()
+    }
+
+    /**
+     * Returns true when all interstitial ad unit IDs have finished loading
+     * (success or failure). Useful for the Loading Screen to wait until
+     * preload completes before navigating.
+     */
+    fun areInterstitialsPreloaded(): Boolean {
+        if (!ConfigManager.getBoolean(ConfigKeys.INTERSTITIAL_ENABLED)) return true
+        return loadingInterstitialIds.isEmpty()
     }
 
     // -----------------------------------------------------------------------
     // Interstitial
     // -----------------------------------------------------------------------
 
-    private fun loadInterstitial() {
-        if (interstitialAd != null || isLoadingInterstitial) return
-        isLoadingInterstitial = true
+    /**
+     * Preload all interstitial ad unit IDs defined in [AdConfig.INTERSTITIAL_IDS].
+     */
+    private fun loadAllInterstitials() {
+        for (adId in AdConfig.INTERSTITIAL_IDS) {
+            loadInterstitial(adId)
+        }
+    }
+
+    /**
+     * Load a single interstitial ad by its ad unit ID.
+     * Skips if already cached or currently loading.
+     */
+    private fun loadInterstitial(adId: String) {
+        if (interstitialAds.containsKey(adId) || loadingInterstitialIds.contains(adId)) return
+        loadingInterstitialIds.add(adId)
 
         InterstitialAd.load(
             appContext,
-            AdConfig.INTERSTITIAL_ID,
+            adId,
             AdRequest.Builder().build(),
             object : InterstitialAdLoadCallback() {
                 override fun onAdLoaded(ad: InterstitialAd) {
-                    interstitialAd = ad
-                    isLoadingInterstitial = false
-                    Log.d(TAG, "Interstitial loaded")
+                    interstitialAds[adId] = ad
+                    loadingInterstitialIds.remove(adId)
+                    Log.d(TAG, "Interstitial loaded for ID: $adId")
                 }
 
-                override fun onAdFailedToLoad(error: LoadAdError) {
-                    interstitialAd = null
-                    isLoadingInterstitial = false
-                    Log.w(TAG, "Interstitial load failed: ${error.message}")
+                override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                    loadingInterstitialIds.remove(adId)
+                    Log.w(TAG, "Interstitial load failed for ID $adId: ${loadAdError.message}")
                 }
             }
         )
     }
 
     /**
-     * Show an interstitial ad if one is cached and frequency rules allow it.
+     * Show an interstitial ad for a specific ad unit ID.
+     *
      * @param activity the hosting activity
+     * @param adId the interstitial ad unit ID to show (default: AdConfig.INTERSTITIAL_ID)
      * @param onDismiss callback after ad is dismissed or if no ad was shown
      */
-    fun showInterstitial(activity: Activity, onDismiss: () -> Unit = {}) {
+    fun showInterstitial(
+        activity: Activity,
+        adId: String = AdConfig.INTERSTITIAL_ID,
+        onDismiss: () -> Unit = {}
+    ) {
         if (!ConfigManager.isAdsEnabled() || !ConfigManager.getBoolean(ConfigKeys.INTERSTITIAL_ENABLED)) {
             onDismiss()
             return
         }
 
-        val ad = interstitialAd
+        val ad = interstitialAds[adId]
         if (ad == null) {
-            Log.d(TAG, "No interstitial cached — loading for next time")
-            loadInterstitial()
+            Log.d(TAG, "No interstitial cached for ID $adId — loading for next time")
+            loadInterstitial(adId)
             onDismiss()
             return
         }
 
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() {
-                interstitialAd = null
-                loadInterstitial() // auto-reload
+                interstitialAds.remove(adId)
+                loadInterstitial(adId) // auto-reload
                 onDismiss()
             }
 
-            override fun onAdFailedToShowFullScreenContent(error: AdError) {
-                interstitialAd = null
-                loadInterstitial()
+            override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                interstitialAds.remove(adId)
+                loadInterstitial(adId)
                 onDismiss()
             }
         }
@@ -166,11 +196,17 @@ object AdManager {
 
     /**
      * Convenience: show interstitial only if frequency rules pass.
-     * Call [frequencyController.recordAction()] before this.
+     * Call frequencyController.recordAction() before this.
+     *
+     * @param adId the interstitial ad unit ID to show (default: AdConfig.INTERSTITIAL_ID)
      */
-    fun showInterstitialIfReady(activity: Activity, onDismiss: () -> Unit = {}) {
+    fun showInterstitialIfReady(
+        activity: Activity,
+        adId: String = AdConfig.INTERSTITIAL_ID,
+        onDismiss: () -> Unit = {}
+    ) {
         if (frequencyController.shouldShowAd()) {
-            showInterstitial(activity, onDismiss)
+            showInterstitial(activity, adId, onDismiss)
         } else {
             onDismiss()
         }
@@ -195,10 +231,10 @@ object AdManager {
                     Log.d(TAG, "Rewarded ad loaded")
                 }
 
-                override fun onAdFailedToLoad(error: LoadAdError) {
+                override fun onAdFailedToLoad(loadAdError: LoadAdError) {
                     rewardedAd = null
                     isLoadingRewarded = false
-                    Log.w(TAG, "Rewarded load failed: ${error.message}")
+                    Log.w(TAG, "Rewarded load failed: ${loadAdError.message}")
                 }
             }
         )
@@ -230,7 +266,7 @@ object AdManager {
                 onDismiss()
             }
 
-            override fun onAdFailedToShowFullScreenContent(error: AdError) {
+            override fun onAdFailedToShowFullScreenContent(adError: AdError) {
                 rewardedAd = null
                 loadRewarded()
                 onDismiss()
@@ -256,15 +292,15 @@ object AdManager {
 
         AdLoader.Builder(appContext, AdConfig.NATIVE_ID)
             .forNativeAd { ad ->
-                nativeAd?.destroy() // destroy previous if any
+                nativeAd?.destroy()
                 nativeAd = ad
                 isLoadingNative = false
                 Log.d(TAG, "Native ad loaded")
             }
             .withAdListener(object : AdListener() {
-                override fun onAdFailedToLoad(error: LoadAdError) {
+                override fun onAdFailedToLoad(loadAdError: LoadAdError) {
                     isLoadingNative = false
-                    Log.w(TAG, "Native ad load failed: ${error.message}")
+                    Log.w(TAG, "Native ad load failed: ${loadAdError.message}")
                 }
             })
             .build()
@@ -273,7 +309,6 @@ object AdManager {
 
     /**
      * Get the cached native ad, or null if not available.
-     * After consuming, call [loadNativeAd] to reload.
      */
     fun getNativeAd(): NativeAd? {
         if (!ConfigManager.isAdsEnabled() || !ConfigManager.getBoolean(ConfigKeys.NATIVE_AD_ENABLED)) {
@@ -298,10 +333,12 @@ object AdManager {
 
     /** Release all cached ads. Call from Application.onTerminate() or when going premium. */
     fun destroyAds() {
-        interstitialAd = null
+        interstitialAds.clear()
+        loadingInterstitialIds.clear()
         rewardedAd = null
         nativeAd?.destroy()
         nativeAd = null
         Log.d(TAG, "All ads destroyed")
     }
 }
+
