@@ -53,6 +53,9 @@ class HomeActivity : AppCompatActivity() {
         binding.btnCamera.setOnClickListener {
             startActivity(Intent(this, CameraActivity::class.java))
         }
+        binding.navCollection.setOnClickListener {
+            startActivity(Intent(this, com.timewarpscan.nativecamera.ui.collection.CollectionActivity::class.java))
+        }
     }
 
     private fun loadVideos() {

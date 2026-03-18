@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1A1A1A"
+    android:clipChildren="false"
+    android:clipToPadding="false">
+
+    <!-- Main content -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- Top bar -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="44dp"
+            android:paddingBottom="8dp">
+
+            <!-- Settings (left) -->
+            <ImageView
+                android:id="@+id/btnSettings"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_gravity="start|center_vertical"
+                android:background="@drawable/bg_circle_button"
+                android:contentDescription="Settings"
+                android:padding="8dp"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_setting" />
+
+            <!-- Title (center) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="Collection"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <!-- Premium (right) -->
+            <ImageView
+                android:id="@+id/btnPremium"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_gravity="end|center_vertical"
+                android:contentDescription="Premium"
+                android:padding="4dp"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_vip" />
+
+        </FrameLayout>
+
+        <!-- Tab bar -->
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_toolbar_pill"
+            android:paddingHorizontal="4dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tabAll"
+                    android:layout_width="80dp"
+                    android:layout_height="28dp"
+                    android:background="@drawable/bg_collection_tab_active"
+                    android:gravity="center"
+                    android:text="All"
+                    android:textColor="#1A1A1A"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <TextView
+                    android:id="@+id/tabVideos"
+                    android:layout_width="80dp"
+                    android:layout_height="28dp"
+                    android:gravity="center"
+                    android:text="Videos"
+                    android:textColor="#80FFFFFF"
+                    android:textSize="14sp"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <TextView
+                    android:id="@+id/tabPhotos"
+                    android:layout_width="80dp"
+                    android:layout_height="28dp"
+                    android:gravity="center"
+                    android:text="Photos"
+                    android:textColor="#80FFFFFF"
+                    android:textSize="14sp"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+            </LinearLayout>
+
+        </FrameLayout>
+
+        <!-- Empty state -->
+        <TextView
+            android:id="@+id/tvEmpty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:text="No photos or videos yet.\nUse the Camera to get started!"
+            android:textColor="#80FFFFFF"
+            android:textSize="15sp"
+            android:visibility="gone" />
+
+        <!-- Media grid -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvMedia"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingBottom="80dp" />
+
+    </LinearLayout>
+
+    <!-- Bottom navigation (same as HomeActivity) -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bg_bottom_nav"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="16dp"
+        android:translationZ="16dp"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <!-- Home button (inactive) -->
+        <LinearLayout
+            android:id="@+id/navHome"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="start"
+            android:layout_marginStart="40dp"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="Home"
+                android:src="@drawable/ic_home"
+                app:tint="#80FFFFFF" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Home"
+                android:textColor="#80FFFFFF"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+
+        <!-- Camera FAB (center, elevated) -->
+        <ImageView
+            android:id="@+id/btnCamera"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="-16dp"
+            android:background="@drawable/bg_camera_fab"
+            android:contentDescription="Camera"
+            android:elevation="32dp"
+            android:translationZ="32dp"
+            android:padding="18dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_camera" />
+
+        <!-- Collection button (active/yellow) -->
+        <LinearLayout
+            android:id="@+id/navCollection"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:layout_marginEnd="40dp"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="Collection"
+                android:src="@drawable/ic_collection"
+                app:tint="#FFC107" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Collection"
+                android:textColor="#FFC107"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
+</FrameLayout>

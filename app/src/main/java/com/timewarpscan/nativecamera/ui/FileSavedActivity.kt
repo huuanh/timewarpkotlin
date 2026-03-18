@@ -58,7 +58,7 @@ class FileSavedActivity : AppCompatActivity() {
         }
 
         btnGoToCollection.setOnClickListener {
-            openGallery(savedUriString)
+            startActivity(Intent(this, com.timewarpscan.nativecamera.ui.collection.CollectionActivity::class.java))
             finish()
         }
     }
