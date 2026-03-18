@@ -306,12 +306,12 @@ class CameraActivity : AppCompatActivity() {
     private fun updateModeUI() {
         if (mode == "photo") {
             btnModePhoto.setBackgroundResource(R.drawable.bg_mode_active)
-            btnModePhoto.setTextColor(Color.WHITE)
+            btnModePhoto.setTextColor(Color.parseColor("#1A1A1A"))
             btnModeVideo.setBackgroundResource(R.drawable.bg_mode_inactive)
             btnModeVideo.setTextColor(Color.parseColor("#80FFFFFF"))
         } else {
             btnModeVideo.setBackgroundResource(R.drawable.bg_mode_active)
-            btnModeVideo.setTextColor(Color.WHITE)
+            btnModeVideo.setTextColor(Color.parseColor("#1A1A1A"))
             btnModePhoto.setBackgroundResource(R.drawable.bg_mode_inactive)
             btnModePhoto.setTextColor(Color.parseColor("#80FFFFFF"))
         }
