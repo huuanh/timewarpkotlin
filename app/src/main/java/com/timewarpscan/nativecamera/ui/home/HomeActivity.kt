@@ -3,21 +3,21 @@ package com.timewarpscan.nativecamera.ui.home
 import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
+import com.timewarpscan.nativecamera.R
 import com.timewarpscan.nativecamera.core.ads.AdManager
-import com.timewarpscan.nativecamera.core.remote.RemoteConfigManager
 import com.timewarpscan.nativecamera.databinding.ActivityHomeBinding
 import com.timewarpscan.nativecamera.model.VideoItem
 import com.timewarpscan.nativecamera.ui.CameraActivity
-import com.timewarpscan.nativecamera.ui.home.adapter.SectionAdapter
+import com.timewarpscan.nativecamera.ui.home.adapter.VideoGridAdapter
+import com.timewarpscan.nativecamera.ui.iap.IAPActivity
 import com.timewarpscan.nativecamera.ui.settings.SettingsActivity
-import kotlinx.coroutines.launch
+import com.timewarpscan.nativecamera.ui.home.VideoPlayerActivity
 
 class HomeActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityHomeBinding
-    private lateinit var sectionAdapter: SectionAdapter
+    private lateinit var videoAdapter: VideoGridAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,22 +27,25 @@ class HomeActivity : AppCompatActivity() {
         setupRecyclerView()
         setupBottomNav()
         setupTopBar()
-        loadSections()
+        loadVideos()
     }
 
     private fun setupTopBar() {
         binding.btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        binding.btnPremium.setOnClickListener {
+            startActivity(Intent(this, IAPActivity::class.java))
+        }
     }
 
     private fun setupRecyclerView() {
-        sectionAdapter = SectionAdapter { item ->
+        videoAdapter = VideoGridAdapter { item ->
             onVideoItemClicked(item)
         }
-        binding.rvSections.apply {
-            layoutManager = LinearLayoutManager(this@HomeActivity)
-            adapter = sectionAdapter
+        binding.rvVideos.apply {
+            layoutManager = GridLayoutManager(this@HomeActivity, 2)
+            adapter = videoAdapter
         }
     }
 
@@ -52,23 +55,22 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadSections() {
-        lifecycleScope.launch {
-            val sections = RemoteConfigManager.getSections(this@HomeActivity)
-            sectionAdapter.setSections(sections)
+    private fun loadVideos() {
+        val effects = listOf("swirl", "mirror", "grid", "double", "waterfall", "split", "single")
+        val videos = (1..10).map { index ->
+            VideoItem(
+                id = "video_$index",
+                thumbnail = "video_$index",
+                effect = effects[(index - 1) % effects.size]
+            )
         }
+        videoAdapter.setItems(videos)
     }
 
     private fun onVideoItemClicked(item: VideoItem) {
-        AdManager.frequencyController.recordAction()
-        AdManager.showInterstitialIfReady(this) {
-            navigateToCamera(item.effect)
-        }
-    }
-
-    private fun navigateToCamera(effect: String) {
-        val intent = Intent(this, CameraActivity::class.java).apply {
-            putExtra("effect", effect)
+        val intent = Intent(this, VideoPlayerActivity::class.java).apply {
+            putExtra("rawResName", item.thumbnail)
+            putExtra("effect", item.effect)
         }
         startActivity(intent)
     }

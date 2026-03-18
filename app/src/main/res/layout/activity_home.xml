@@ -3,7 +3,9 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1A1A1A">
+    android:background="#1A1A1A"
+    android:clipChildren="false"
+    android:clipToPadding="false">
 
     <!-- Main content area -->
     <LinearLayout
@@ -54,13 +56,14 @@
 
         </FrameLayout>
 
-        <!-- Sections RecyclerView -->
+        <!-- Video grid -->
         <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rvSections"
+            android:id="@+id/rvVideos"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:clipToPadding="false"
+            android:paddingHorizontal="4dp"
             android:paddingBottom="80dp" />
 
     </LinearLayout>
@@ -70,7 +73,13 @@
         android:layout_width="match_parent"
         android:layout_height="64dp"
         android:layout_gravity="bottom"
-        android:background="@drawable/bg_bottom_nav">
+        android:background="@drawable/bg_bottom_nav"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="16dp"
+        android:translationZ="16dp"
+        android:clipChildren="false"
+        android:clipToPadding="false">
 
         <!-- Home button -->
         <LinearLayout
@@ -107,7 +116,8 @@
             android:layout_marginTop="-16dp"
             android:background="@drawable/bg_camera_fab"
             android:contentDescription="Camera"
-            android:elevation="8dp"
+            android:elevation="32dp"
+            android:translationZ="32dp"
             android:padding="18dp"
             android:scaleType="centerInside"
             android:src="@drawable/ic_camera" />

@@ -38,7 +38,7 @@ class LanguageAdapter(
 
         holder.itemView.setOnClickListener {
             val prev = selectedPosition
-            selectedPosition = holder.adapterPosition
+            selectedPosition = holder.bindingAdapterPosition
             notifyItemChanged(prev)
             notifyItemChanged(selectedPosition)
             onSelected(selectedPosition)
