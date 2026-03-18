@@ -78,5 +78,17 @@
             android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize"
             android:theme="@style/Theme.NativeCamera.Fullscreen" />
+
+        <activity
+            android:name=".ui.PreviewActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.NativeCamera.Fullscreen" />
+
+        <activity
+            android:name=".ui.FileSavedActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.NativeCamera.Fullscreen" />
     </application>
 </manifest>

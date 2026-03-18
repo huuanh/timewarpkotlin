@@ -1,6 +1,7 @@
 package com.timewarpscan.nativecamera.ui
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PorterDuff
@@ -403,27 +404,33 @@ class CameraActivity : AppCompatActivity() {
 
     private fun captureInstantPhoto() {
         tvStatus.visibility = View.VISIBLE
-        tvStatus.text = "Saving…"
+        tvStatus.text = "Processing…"
 
         glSurfaceView.queueEvent {
             val bitmap = renderer.captureCurrentFrame()
             if (bitmap != null) {
                 lifecycleScope.launch {
-                    val uri = BitmapUtils.saveToGallery(this@CameraActivity, bitmap)
+                    val tempFile = BitmapUtils.saveTempFile(this@CameraActivity, bitmap)
                     bitmap.recycle()
                     runOnUiThread {
-                        if (uri != null) {
-                            tvStatus.text = "Saved to gallery!"
-                            Toast.makeText(this@CameraActivity, "Photo saved", Toast.LENGTH_SHORT).show()
-                            AdManager.showInterstitialIfReady(this@CameraActivity)
+                        tvStatus.visibility = View.GONE
+                        if (tempFile != null) {
+                            startActivity(
+                                Intent(this@CameraActivity, PreviewActivity::class.java).apply {
+                                    putExtra(PreviewActivity.EXTRA_TEMP_PATH, tempFile.absolutePath)
+                                }
+                            )
                         } else {
-                            tvStatus.text = "Save failed"
+                            tvStatus.text = "Capture failed"
+                            tvStatus.postDelayed({ tvStatus.visibility = View.GONE }, 2000)
                         }
-                        tvStatus.postDelayed({ tvStatus.visibility = View.GONE }, 2000)
                     }
                 }
             } else {
-                runOnUiThread { tvStatus.text = "Capture failed" }
+                runOnUiThread {
+                    tvStatus.text = "Capture failed"
+                    tvStatus.postDelayed({ tvStatus.visibility = View.GONE }, 2000)
+                }
             }
         }
     }
@@ -494,40 +501,42 @@ class CameraActivity : AppCompatActivity() {
 
     private fun saveCompositePhoto() {
         tvStatus.visibility = View.VISIBLE
-        tvStatus.text = "Saving…"
+        tvStatus.text = "Processing…"
 
         glSurfaceView.queueEvent {
             val bitmap = renderer.readCompositePixels()
             if (bitmap != null) {
                 lifecycleScope.launch {
-                    val uri = BitmapUtils.saveToGallery(this@CameraActivity, bitmap)
+                    val tempFile = BitmapUtils.saveTempFile(this@CameraActivity, bitmap)
                     bitmap.recycle()
 
                     runOnUiThread {
-                        if (uri != null) {
-                            tvStatus.text = "Saved to gallery!"
-                            Toast.makeText(this@CameraActivity, "Photo saved", Toast.LENGTH_SHORT).show()
-                            // Show interstitial if frequency allows
-                            AdManager.showInterstitialIfReady(this@CameraActivity)
-                        } else {
-                            tvStatus.text = "Save failed"
-                            Toast.makeText(this@CameraActivity, "Failed to save", Toast.LENGTH_SHORT).show()
-                        }
-
-                        // Reset for new scan
+                        tvStatus.visibility = View.GONE
+                        // Reset scan engine for next capture
                         glSurfaceView.queueEvent {
                             scanEngine.reset()
                             renderer.clearComposite()
                         }
-                        tvStatus.postDelayed({
-                            tvStatus.visibility = View.GONE
-                        }, 2000)
+                        isScanning = false
+                        isRecording = false
                         updateCaptureButton()
+
+                        if (tempFile != null) {
+                            startActivity(
+                                Intent(this@CameraActivity, PreviewActivity::class.java).apply {
+                                    putExtra(PreviewActivity.EXTRA_TEMP_PATH, tempFile.absolutePath)
+                                }
+                            )
+                        } else {
+                            tvStatus.text = "Failed to process"
+                            tvStatus.postDelayed({ tvStatus.visibility = View.GONE }, 2000)
+                        }
                     }
                 }
             } else {
                 runOnUiThread {
                     tvStatus.text = "No image to save"
+                    tvStatus.postDelayed({ tvStatus.visibility = View.GONE }, 2000)
                 }
             }
         }

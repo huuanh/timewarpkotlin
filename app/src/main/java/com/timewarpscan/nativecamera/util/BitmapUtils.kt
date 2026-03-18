@@ -138,4 +138,52 @@ object BitmapUtils {
         val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
         return "TWS_${sdf.format(Date())}"
     }
+
+    /**
+     * Save a Bitmap to a temporary JPEG file in the app cache directory.
+     * The caller is responsible for deleting the file when done.
+     */
+    suspend fun saveTempFile(context: Context, bitmap: Bitmap): java.io.File? = withContext(Dispatchers.IO) {
+        try {
+            val file = java.io.File(context.cacheDir, "preview_${System.currentTimeMillis()}.jpg")
+            file.outputStream().use { stream ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
+            }
+            file
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save temp file", e)
+            null
+        }
+    }
+
+    /**
+     * Copy a JPEG file from the app cache into the Pictures gallery via MediaStore.
+     * @return the content URI string of the saved image, or null on failure.
+     */
+    suspend fun saveFileToGallery(context: Context, file: java.io.File, displayName: String? = null): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val name = displayName ?: generateTimestampName()
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "$name.jpg")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$SUBFOLDER")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                    ?: return@withContext null
+                resolver.openOutputStream(uri)?.use { out ->
+                    file.inputStream().use { inp -> inp.copyTo(out) }
+                } ?: return@withContext null
+                contentValues.clear()
+                contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, contentValues, null, null)
+                Log.d(TAG, "File saved to gallery: $uri ($name.jpg)")
+                uri.toString()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save file to gallery", e)
+                null
+            }
+        }
 }
