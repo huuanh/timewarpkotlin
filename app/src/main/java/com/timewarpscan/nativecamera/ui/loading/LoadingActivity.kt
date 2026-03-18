@@ -99,8 +99,12 @@ class LoadingActivity : AppCompatActivity() {
         } else {
             HomeActivity::class.java
         }
-        startActivity(Intent(this, target))
-        finish()
+
+        // Show App Open Ad, then navigate
+        AdManager.appOpenAdManager.showIfAvailable(this) {
+            startActivity(Intent(this, target))
+            finish()
+        }
     }
 
     override fun onDestroy() {

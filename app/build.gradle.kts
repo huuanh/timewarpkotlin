@@ -59,10 +59,19 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-process:2.8.7")
 
     // AdMob
-    implementation("com.google.android.gms:play-services-ads:23.6.0")
-
+    implementation("com.google.android.gms:play-services-ads:25.1.0")
+    // AdMob Mediation Adapters
+    implementation("com.google.ads.mediation:ironsource:9.3.0.1")
+    implementation("com.google.ads.mediation:applovin:13.6.0.0")
+    implementation("com.google.ads.mediation:unity:4.17.0.0")
+    implementation("com.google.ads.mediation:inmobi:11.1.1.0")
+    implementation("com.google.ads.mediation:vungle:7.7.1.0")
+    implementation("com.google.ads.mediation:mintegral:17.0.91.0")
+    implementation("com.google.ads.mediation:pangle:7.9.1.1.0")
+    implementation("com.google.ads.mediation:adcolony:4.8.0.2")
+    
     // Google Play Billing
-    implementation("com.android.billingclient:billing-ktx:7.1.1")
+    implementation("com.android.billingclient:billing-ktx:8.3.0")
 
     // Guava ListenableFuture — resolve conflict between CameraX and AdMob
     implementation("com.google.guava:guava:32.1.3-android")

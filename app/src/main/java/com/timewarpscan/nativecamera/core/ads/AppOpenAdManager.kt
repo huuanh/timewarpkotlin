@@ -76,12 +76,19 @@ class AppOpenAdManager(
     // -----------------------------------------------------------------------
 
     /** Show the cached App Open Ad on the given activity. */
-    fun showIfAvailable(activity: Activity) {
-        if (isShowingAd) return
-        if (!ConfigManager.isAdsEnabled() || !ConfigManager.getBoolean(ConfigKeys.APP_OPEN_AD_ENABLED)) return
+    fun showIfAvailable(activity: Activity, onDismiss: (() -> Unit)? = null) {
+        if (isShowingAd) {
+            onDismiss?.invoke()
+            return
+        }
+        if (!ConfigManager.isAdsEnabled() || !ConfigManager.getBoolean(ConfigKeys.APP_OPEN_AD_ENABLED)) {
+            onDismiss?.invoke()
+            return
+        }
 
         val ad = appOpenAd ?: run {
             loadAd()
+            onDismiss?.invoke()
             return
         }
 
@@ -91,12 +98,14 @@ class AppOpenAdManager(
                 appOpenAd = null
                 isShowingAd = false
                 loadAd() // auto-reload
+                onDismiss?.invoke()
             }
 
             override fun onAdFailedToShowFullScreenContent(error: AdError) {
                 appOpenAd = null
                 isShowingAd = false
                 loadAd()
+                onDismiss?.invoke()
             }
         }
         ad.show(activity)

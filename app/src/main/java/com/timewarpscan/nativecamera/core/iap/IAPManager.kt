@@ -73,7 +73,12 @@ object IAPManager {
 
         billingClient = BillingClient.newBuilder(appContext)
             .setListener(purchasesUpdatedListener)
-            .enablePendingPurchases()
+            .enablePendingPurchases(
+                PendingPurchasesParams.newBuilder()
+                    .enableOneTimeProducts()
+                    .enablePrepaidPlans()
+                    .build()
+            )
             .build()
 
         connect()
