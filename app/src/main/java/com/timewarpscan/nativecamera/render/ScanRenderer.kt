@@ -280,22 +280,28 @@ class ScanRenderer(
         // --- Step 3: If recording, render composition to outputFBO (GL context, OES is safe here),
         //             then switch to encoder context and blit outputTex (TEXTURE_2D — no OES involved).
         videoRecorder?.let { recorder ->
-            if (recorder.isRecording() && outputFboId != 0) {
-                // 3a. Bake final frame into outputFBO while OES context is still current
-                GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, outputFboId)
-                GLES20.glViewport(0, 0, viewWidth, viewHeight)
-                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-                renderComposition(scanState)
-                GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+            if (recorder.isRecording() && !recorder.released && outputFboId != 0) {
+                try {
+                    // 3a. Bake final frame into outputFBO while OES context is still current
+                    GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, outputFboId)
+                    GLES20.glViewport(0, 0, viewWidth, viewHeight)
+                    GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+                    renderComposition(scanState)
+                    GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
 
-                // 3b. Switch to encoder EGL surface and blit the plain texture
-                recorder.makeCurrent()
-                GLES20.glViewport(0, 0, viewWidth, viewHeight)
-                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-                drawEncoderFrame()
-                recorder.swapBuffers()
-                recorder.makeNonCurrent()
-                recorder.frameAvailable()
+                    // 3b. Switch to encoder EGL surface and blit the plain texture
+                    recorder.makeCurrent()
+                    GLES20.glViewport(0, 0, recorder.encoderWidth, recorder.encoderHeight)
+                    GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+                    drawEncoderFrame()
+                    recorder.swapBuffers()
+                    recorder.makeNonCurrent()
+                    recorder.frameAvailable()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Recording frame failed, restoring GL context", e)
+                    // Ensure GLSurfaceView context is restored even on error
+                    try { recorder.makeNonCurrent() } catch (_: Exception) {}
+                }
             }
         }
 

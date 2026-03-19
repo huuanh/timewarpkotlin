@@ -2,6 +2,7 @@ package com.timewarpscan.nativecamera.record
 
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.opengl.EGL14
@@ -12,6 +13,7 @@ import android.opengl.EGLExt
 import android.opengl.EGLSurface
 import android.util.Log
 import android.view.Surface
+import java.io.File
 
 /**
  * Video recorder using MediaCodec H.264 encoder + MediaMuxer.
@@ -35,9 +37,23 @@ class VideoRecorder {
         private const val BIT_RATE = 4_000_000 // 4 Mbps
         private const val I_FRAME_INTERVAL = 1  // seconds
         private const val TIMEOUT_US = 10_000L
+        /** Max dimension (width or height). Keeps encoder happy on most devices. */
+        private const val MAX_DIMENSION = 1920
+
+        /** Round down to nearest multiple of 16 (required by many H.264 encoders). */
+        private fun align16(value: Int): Int = value and 0x7FFFFFF0 // same as (value / 16) * 16
     }
 
+    // Synchronizes stop() and frameAvailable() to prevent codec use-after-release
+    private val codecLock = Object()
+
+    // Set to true after stop() completes — prevents any further encoder/EGL operations
+    @Volatile
+    var released = false
+        private set
+
     // MediaCodec
+    @Volatile
     private var codec: MediaCodec? = null
     private var muxer: MediaMuxer? = null
     private var inputSurface: Surface? = null
@@ -60,6 +76,15 @@ class VideoRecorder {
 
     private var recordingStartNs = 0L
 
+    /** Actual encoder dimensions (may differ from requested due to clamping). */
+    var encoderWidth = 0
+        private set
+    var encoderHeight = 0
+        private set
+
+    /** Called on the GL thread when the encoder encounters a fatal error. */
+    var onError: (() -> Unit)? = null
+
     /**
      * Prepare the encoder and EGL surface.
      *
@@ -73,9 +98,26 @@ class VideoRecorder {
         outputPath = path
         trackIndex = -1
         muxerStarted = false
+        released = false
+
+        // Clamp resolution: keep aspect ratio, max dim = MAX_DIMENSION, align to 16px.
+        var w = width
+        var h = height
+        val maxDim = maxOf(w, h)
+        if (maxDim > MAX_DIMENSION) {
+            val scale = MAX_DIMENSION.toFloat() / maxDim
+            w = (w * scale).toInt()
+            h = (h * scale).toInt()
+        }
+        w = align16(w)
+        h = align16(h)
+        if (w <= 0) w = 16
+        if (h <= 0) h = 16
+        encoderWidth = w
+        encoderHeight = h
 
         // Configure H.264 encoder
-        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
+        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)
             setInteger(
@@ -85,7 +127,15 @@ class VideoRecorder {
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL)
         }
 
-        val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        // Try hardware encoder first, fall back to any compatible encoder
+        val c = try {
+            MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        } catch (e: Exception) {
+            Log.w(TAG, "Default encoder unavailable, trying fallback", e)
+            findFallbackEncoder()
+                ?: throw RuntimeException("No H.264 encoder available on this device")
+        }
+
         c.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         inputSurface = c.createInputSurface()
         c.start()
@@ -96,7 +146,23 @@ class VideoRecorder {
         // Create EGL surface for the encoder's input surface
         setupEGL(sharedContext)
 
-        Log.d(TAG, "Recorder prepared: ${width}x${height} @ ${fps}fps → $path")
+        Log.d(TAG, "Recorder prepared: ${width}x${height} → ${w}x${h} @ ${fps}fps → $path")
+    }
+
+    /** Find any available H.264 encoder (software or hardware). */
+    private fun findFallbackEncoder(): MediaCodec? {
+        val codecList = MediaCodecList(MediaCodecList.ALL_CODECS)
+        for (info in codecList.codecInfos) {
+            if (!info.isEncoder) continue
+            if (info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) }) {
+                return try {
+                    MediaCodec.createByCodecName(info.name)
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        }
+        return null
     }
 
     /** Start recording. Must be called after [prepare]. */
@@ -139,7 +205,21 @@ class VideoRecorder {
      * Call after each frame is rendered to the encoder surface.
      */
     fun frameAvailable() {
-        drainEncoder(false)
+        if (!recording || released) return
+        synchronized(codecLock) {
+            val c = codec ?: return
+            try {
+                drainEncoderInternal(c, false)
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "Encoder error during frame drain, stopping recording", e)
+                recording = false
+                // Codec auto-released by system — null it out so stop() won't
+                // attempt signalEndOfInputStream/drain/stop on a dead codec.
+                codec = null
+                // Notify caller so the UI can react immediately
+                onError?.invoke()
+            }
+        }
     }
 
     /**
@@ -150,34 +230,80 @@ class VideoRecorder {
      */
     fun stop(): String? {
         recording = false
-        val c = codec ?: return null
+        val c: MediaCodec?
+        synchronized(codecLock) {
+            c = codec
+            codec = null
+        }
+
+        if (c != null) {
+            try {
+                c.signalEndOfInputStream()
+            } catch (e: Exception) {
+                Log.w(TAG, "signalEndOfInputStream failed", e)
+            }
+
+            try {
+                drainEncoderInternal(c, true)
+            } catch (e: Exception) {
+                Log.w(TAG, "Final drain failed", e)
+            }
+        }
+
+        finalizeMuxer()
+
+        if (c != null) {
+            try { c.stop() } catch (e: Exception) { Log.w(TAG, "Codec stop failed", e) }
+            try { c.release() } catch (e: Exception) { Log.w(TAG, "Codec release failed", e) }
+        }
 
         try {
-            c.signalEndOfInputStream()
-            drainEncoder(true)
-
-            if (muxerStarted) {
-                muxer?.stop()
-            }
-            muxer?.release()
-            c.stop()
-            c.release()
             inputSurface?.release()
         } catch (e: Exception) {
-            Log.e(TAG, "Error stopping recorder", e)
+            Log.w(TAG, "InputSurface release failed", e)
         }
 
         releaseEGL()
 
         val path = outputPath
-        codec = null
-        muxer = null
         inputSurface = null
         outputPath = null
         trackIndex = -1
         muxerStarted = false
+        released = true
 
-        Log.d(TAG, "Recording stopped: $path")
+        return validateOutputFile(path)
+    }
+
+    /** Stops and releases the muxer, finalizing the MP4 file. Safe to call multiple times. */
+    private fun finalizeMuxer() {
+        val m = muxer ?: return
+        muxer = null
+        try {
+            if (muxerStarted) m.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "Muxer stop failed", e)
+        }
+        try {
+            m.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "Muxer release failed", e)
+        }
+    }
+
+    /**
+     * Verify the output file is playable. Returns the path if valid, null otherwise.
+     * Deletes corrupt/empty files.
+     */
+    private fun validateOutputFile(path: String?): String? {
+        if (path == null) return null
+        val file = File(path)
+        if (!file.exists() || file.length() < 1024) {
+            Log.w(TAG, "Recording output invalid (${if (file.exists()) file.length() else "missing"} bytes), deleting: $path")
+            file.delete()
+            return null
+        }
+        Log.d(TAG, "Recording stopped: $path (${file.length()} bytes)")
         return path
     }
 
@@ -260,8 +386,7 @@ class VideoRecorder {
     // Encoder drain loop — same pattern as VideoEncoderModule
     // -----------------------------------------------------------------------
 
-    private fun drainEncoder(endOfStream: Boolean) {
-        val c = codec ?: return
+    private fun drainEncoderInternal(c: MediaCodec, endOfStream: Boolean) {
         val m = muxer ?: return
 
         while (true) {

@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
@@ -76,7 +77,10 @@ class PreviewActivity : AppCompatActivity() {
                 mp.isLooping = true
                 videoPreview.start()
             }
-            videoPreview.start()
+            videoPreview.setOnErrorListener { _, what, extra ->
+                Log.e("PreviewActivity", "VideoView error: what=$what extra=$extra")
+                true
+            }
         } else {
             val bitmap = BitmapFactory.decodeFile(file.absolutePath)
             ivPreview.setImageBitmap(bitmap)

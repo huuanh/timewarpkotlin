@@ -90,6 +90,7 @@ class CameraActivity : AppCompatActivity() {
     private var speedIndex = 0
 
     private var countdownTimer: CountDownTimer? = null
+    private var rendererSet = false
 
     // --- Effects list (matches TimeWarpScan effectsConfig.js) ---
     private val effects = listOf(
@@ -151,11 +152,26 @@ class CameraActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::glSurfaceView.isInitialized) glSurfaceView.onResume()
+        if (rendererSet) glSurfaceView.onResume()
     }
 
     override fun onPause() {
-        if (::glSurfaceView.isInitialized) glSurfaceView.onPause()
+        // Stop recording before pausing GL thread so the file is properly finalized.
+        // Must happen here (not onDestroy) because GL thread is still alive.
+        videoRecorder?.let { rec ->
+            isRecording = false
+            isScanning = false
+            glSurfaceView.queueEvent {
+                scanEngine.reset()
+                if (::renderer.isInitialized) {
+                    renderer.clearComposite()
+                    renderer.videoRecorder = null
+                }
+                rec.stop()
+            }
+            videoRecorder = null
+        }
+        if (rendererSet) glSurfaceView.onPause()
         super.onPause()
     }
 
@@ -213,6 +229,7 @@ class CameraActivity : AppCompatActivity() {
 
         glSurfaceView.setEGLContextClientVersion(2)
         glSurfaceView.setRenderer(renderer)
+        rendererSet = true
         glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
 
         renderer.onSurfaceTextureAvailable = { surfaceTexture ->
@@ -484,6 +501,15 @@ class CameraActivity : AppCompatActivity() {
             }
             val recorder = VideoRecorder()
             recorder.prepare(renderer.rendererWidth, renderer.rendererHeight, 30, outputPath, EGL14.eglGetCurrentContext())
+            // If hardware encoder fails mid-recording, auto-stop and notify user
+            recorder.onError = {
+                runOnUiThread {
+                    if (isRecording) {
+                        stopVideoRecording()
+                        Toast.makeText(this@CameraActivity, "Recording failed on this device", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
             recorder.start()
             renderer.videoRecorder = recorder
             videoRecorder = recorder
